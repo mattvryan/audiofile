@@ -48,6 +48,7 @@ def check_file_path(data):
 
 def main(args):
 	if args['path']:
+		lib.initialize_db()
 		tp = ThreadPool(process_file)
 		for f in find_files_with_ext(args['path'], 'mp3'):
 			tp.put([f, args['path']])

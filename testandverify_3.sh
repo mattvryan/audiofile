@@ -1,9 +1,9 @@
 ./audiofile3 -a ~/Music/vtest
 
-if [ ! -f ~/.audiofile/lib.db ]; then
-	echo "Database not created."
-	exit 1
-fi
+#if [ ! -f ~/.audiofile/lib.db ]; then
+#	echo "Database not created."
+#	exit 1
+#fi
 
 ./audiofile3 -r '%a/%b/%d.%n-%t-%b-%a.mp3'
 

@@ -29,13 +29,13 @@ THE SOFTWARE.
 from sys import argv, exit, stdout
 from os import rename
 
-from aflib3 import AFLibrary, AFCouchDataStore
+from aflib3 import AFLibrary, AFMongoDataStore
 from threadpool import ThreadPool
 from afutils import get_clargs, find_files_with_ext, parse_query
 import afutils.file_pattern as pattern
 
 
-lib = AFLibrary(AFCouchDataStore())
+lib = AFLibrary(AFMongoDataStore())
 
 
 def process_file(data):
@@ -48,6 +48,7 @@ def check_file_path(data):
 
 def main(args):
 	if args['path']:
+		lib.initialize_db()
 		tp = ThreadPool(process_file)
 		for f in find_files_with_ext(args['path'], 'mp3'):
 			tp.put([f, args['path']])

@@ -50,9 +50,7 @@ class AFDataStore:
 		('publisher.name', 'publisher'),
 		('genre.name', 'genre')
 	]
-	def __init__(self):
-		self._create_db()
-	def _create_db(self):
+	def create_db(self):
 		raise NotImplementedError
 	def save_mp3(self,entry):
 		raise NotImplementedError
@@ -82,25 +80,6 @@ class AFSqliteDataStore(AFDataStore):
 			cur.execute('DROP TABLE %s' % row[0])
 		dbconn.commit()
 		dbconn.close()		
-	def _create_db(self):
-		self.dbname = expanduser('~/.audiofile/lib.db')
-		if not isdir(dirname(self.dbname)):
-			makedirs(dirname(self.dbname))
-		if not self._have_schema():
-			self._clear_db()
-		dbconn = self._get_connection()
-		cur = dbconn.cursor()
-		cur.executescript("""
-			CREATE TABLE IF NOT EXISTS publisher(id INTEGER PRIMARY KEY, name VARCHAR UNIQUE);
-			CREATE TABLE IF NOT EXISTS genre(id INTEGER PRIMARY KEY, name VARCHAR UNIQUE);
-			CREATE TABLE IF NOT EXISTS artist(id INTEGER PRIMARY KEY, name VARCHAR UNIQUE);
-			CREATE TABLE IF NOT EXISTS album(id INTEGER PRIMARY KEY, name VARCHAR, artist_id INTEGER, track_count INTEGER, disc_count INTEGER DEFAULT 1, publisher_id INTEGER, year VARCHAR DEFAULT NULL, FOREIGN KEY(artist_id) REFERENCES artist(id), FOREIGN KEY(publisher_id) REFERENCES publisher(id));
-			CREATE TABLE IF NOT EXISTS song(id INTEGER PRIMARY KEY, name VARCHAR, path VARCHAR, base_path VARCHAR, album_id INTEGER, artist_id INTEGER, genre_id INTEGER, track_num INTEGER, disc_num INTEGER, FOREIGN KEY(album_id) REFERENCES album(id), FOREIGN KEY(artist_id) REFERENCES artist(id), FOREIGN KEY(genre_id) REFERENCES genre(id));
-			CREATE UNIQUE INDEX IF NOT EXISTS unique_album ON album(name,artist_id);
-			CREATE UNIQUE INDEX IF NOT EXISTS unique_song ON song(name,album_id);
-		""")
-		dbconn.commit()
-		dbconn.close()
 	def _get_or_create_id(self,table,name,dbconn):
 		if name and len(name):
 			cur = dbconn.cursor()
@@ -158,6 +137,25 @@ class AFSqliteDataStore(AFDataStore):
 			w = 'AND'
 		return sql
 
+	def _create_db(self):
+		self.dbname = expanduser('~/.audiofile/lib.db')
+		if not isdir(dirname(self.dbname)):
+			makedirs(dirname(self.dbname))
+		if not self._have_schema():
+			self._clear_db()
+		dbconn = self._get_connection()
+		cur = dbconn.cursor()
+		cur.executescript("""
+			CREATE TABLE IF NOT EXISTS publisher(id INTEGER PRIMARY KEY, name VARCHAR UNIQUE);
+			CREATE TABLE IF NOT EXISTS genre(id INTEGER PRIMARY KEY, name VARCHAR UNIQUE);
+			CREATE TABLE IF NOT EXISTS artist(id INTEGER PRIMARY KEY, name VARCHAR UNIQUE);
+			CREATE TABLE IF NOT EXISTS album(id INTEGER PRIMARY KEY, name VARCHAR, artist_id INTEGER, track_count INTEGER, disc_count INTEGER DEFAULT 1, publisher_id INTEGER, year VARCHAR DEFAULT NULL, FOREIGN KEY(artist_id) REFERENCES artist(id), FOREIGN KEY(publisher_id) REFERENCES publisher(id));
+			CREATE TABLE IF NOT EXISTS song(id INTEGER PRIMARY KEY, name VARCHAR, path VARCHAR, base_path VARCHAR, album_id INTEGER, artist_id INTEGER, genre_id INTEGER, track_num INTEGER, disc_num INTEGER, FOREIGN KEY(album_id) REFERENCES album(id), FOREIGN KEY(artist_id) REFERENCES artist(id), FOREIGN KEY(genre_id) REFERENCES genre(id));
+			CREATE UNIQUE INDEX IF NOT EXISTS unique_album ON album(name,artist_id);
+			CREATE UNIQUE INDEX IF NOT EXISTS unique_song ON song(name,album_id);
+		""")
+		dbconn.commit()
+		dbconn.close()
 	def save_mp3(self,entry):
 		dbconn = self._get_connection()
 		publisher_id = self._get_or_create_id('publisher',entry.publisher,dbconn)
@@ -208,6 +206,9 @@ class AFLibrary:
 	def __init__(self, datastore):
 		self.datastore = datastore
 				
+	def initialize_db(self):
+		self.datastore.create_db()
+
 	def add_mp3(self, path, base_path):
 		ent = AFLibraryEntry()
 		ent.apply_path(path, base_path)

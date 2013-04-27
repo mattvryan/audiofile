@@ -31,6 +31,8 @@ from os import makedirs
 from os.path import isfile, isdir, dirname, expanduser
 import eyed3
 import sqlite3 as sql
+import pymongo
+import json
 
 class AFDataStore:
 	'''Abstract base class representing a datastore
@@ -50,9 +52,7 @@ class AFDataStore:
 		('publisher.name', 'publisher'),
 		('genre.name', 'genre')
 	]
-	def __init__(self):
-		self._create_db()
-	def _create_db(self):
+	def create_db(self):
 		raise NotImplementedError
 	def save_mp3(self,entry):
 		raise NotImplementedError
@@ -82,25 +82,6 @@ class AFSqliteDataStore(AFDataStore):
 			cur.execute('DROP TABLE %s' % row[0])
 		dbconn.commit()
 		dbconn.close()		
-	def _create_db(self):
-		self.dbname = expanduser('~/.audiofile/lib.db')
-		if not isdir(dirname(self.dbname)):
-			makedirs(dirname(self.dbname))
-		if not self._have_schema():
-			self._clear_db()
-		dbconn = self._get_connection()
-		cur = dbconn.cursor()
-		cur.executescript("""
-			CREATE TABLE IF NOT EXISTS publisher(id INTEGER PRIMARY KEY, name VARCHAR UNIQUE);
-			CREATE TABLE IF NOT EXISTS genre(id INTEGER PRIMARY KEY, name VARCHAR UNIQUE);
-			CREATE TABLE IF NOT EXISTS artist(id INTEGER PRIMARY KEY, name VARCHAR UNIQUE);
-			CREATE TABLE IF NOT EXISTS album(id INTEGER PRIMARY KEY, name VARCHAR, artist_id INTEGER, track_count INTEGER, disc_count INTEGER DEFAULT 1, publisher_id INTEGER, year VARCHAR DEFAULT NULL, FOREIGN KEY(artist_id) REFERENCES artist(id), FOREIGN KEY(publisher_id) REFERENCES publisher(id));
-			CREATE TABLE IF NOT EXISTS song(id INTEGER PRIMARY KEY, name VARCHAR, path VARCHAR, base_path VARCHAR, album_id INTEGER, artist_id INTEGER, genre_id INTEGER, track_num INTEGER, disc_num INTEGER, FOREIGN KEY(album_id) REFERENCES album(id), FOREIGN KEY(artist_id) REFERENCES artist(id), FOREIGN KEY(genre_id) REFERENCES genre(id));
-			CREATE UNIQUE INDEX IF NOT EXISTS unique_album ON album(name,artist_id);
-			CREATE UNIQUE INDEX IF NOT EXISTS unique_song ON song(name,album_id);
-		""")
-		dbconn.commit()
-		dbconn.close()
 	def _get_or_create_id(self,table,name,dbconn):
 		if name and len(name):
 			cur = dbconn.cursor()
@@ -158,6 +139,25 @@ class AFSqliteDataStore(AFDataStore):
 			w = 'AND'
 		return sql
 
+	def create_db(self):
+		self.dbname = expanduser('~/.audiofile/lib.db')
+		if not isdir(dirname(self.dbname)):
+			makedirs(dirname(self.dbname))
+		if not self._have_schema():
+			self._clear_db()
+		dbconn = self._get_connection()
+		cur = dbconn.cursor()
+		cur.executescript("""
+			CREATE TABLE IF NOT EXISTS publisher(id INTEGER PRIMARY KEY, name VARCHAR UNIQUE);
+			CREATE TABLE IF NOT EXISTS genre(id INTEGER PRIMARY KEY, name VARCHAR UNIQUE);
+			CREATE TABLE IF NOT EXISTS artist(id INTEGER PRIMARY KEY, name VARCHAR UNIQUE);
+			CREATE TABLE IF NOT EXISTS album(id INTEGER PRIMARY KEY, name VARCHAR, artist_id INTEGER, track_count INTEGER, disc_count INTEGER DEFAULT 1, publisher_id INTEGER, year VARCHAR DEFAULT NULL, FOREIGN KEY(artist_id) REFERENCES artist(id), FOREIGN KEY(publisher_id) REFERENCES publisher(id));
+			CREATE TABLE IF NOT EXISTS song(id INTEGER PRIMARY KEY, name VARCHAR, path VARCHAR, base_path VARCHAR, album_id INTEGER, artist_id INTEGER, genre_id INTEGER, track_num INTEGER, disc_num INTEGER, FOREIGN KEY(album_id) REFERENCES album(id), FOREIGN KEY(artist_id) REFERENCES artist(id), FOREIGN KEY(genre_id) REFERENCES genre(id));
+			CREATE UNIQUE INDEX IF NOT EXISTS unique_album ON album(name,artist_id);
+			CREATE UNIQUE INDEX IF NOT EXISTS unique_song ON song(name,album_id);
+		""")
+		dbconn.commit()
+		dbconn.close()
 	def save_mp3(self,entry):
 		dbconn = self._get_connection()
 		publisher_id = self._get_or_create_id('publisher',entry.publisher,dbconn)
@@ -199,13 +199,33 @@ class AFSqliteDataStore(AFDataStore):
 			results.append(result)
 		return results
 
-class AFCouchDataStore(AFDataStore):
-	def _create_db(self):
-		raise NotImplementedError
+class AFMongoDataStore(AFDataStore):
+	'''Implementation of AFDataStore which stores
+	the audiofile library in MongoDB running on localhost.'''
+	dbname = 'audiofile'
+	def __init__(self,dbhost=None,port=None):
+		if dbhost and port:
+			self.client = pymongo.MongoClient(dbhost,port)
+		else:
+			self.client = pymongo.MongoClient()
+	def create_db(self):
+		db = self.client.audiofile
+		db.drop_collection(db.songs)
 	def save_mp3(self,entry):
-		raise NotImplementedError
+		db = self.client.audiofile
+		songs = db.songs
+		songs.insert(entry.__dict__)
 	def get_query_result_set(self,qdict):
-		raise NotImplementedError
+		db = self.client.audiofile
+		songs = db.songs
+		results = []
+		if qdict:
+			cursor = songs.find(qdict)
+		else:
+			cursor = songs.find()
+		for result in cursor:
+			results.append(result)
+		return results
 
 class AFLibrary:
 	'''Represents an audiofile library.
@@ -214,6 +234,9 @@ class AFLibrary:
 	'''
 	def __init__(self, datastore):
 		self.datastore = datastore
+		
+	def initialize_db(self):
+		self.datastore.create_db()
 				
 	def add_mp3(self, path, base_path):
 		ent = AFLibraryEntry()
@@ -273,18 +296,25 @@ class AFLibraryEntry:
 				if mp3.tag.genre:
 					self.genre = mp3.tag.genre.name
 	def apply_dict(self,d):
-		self.title = d['title']
-		self.path = d['path']
-		self.base_path = d['base_path']
-		self.track_num = d['track_num']
-		self.disc_num = d['disc_num']
-		self.album = d['album']
-		self.total_tracks = d['total_tracks']
-		self.total_discs = d['total_discs']
-		self.year = d['year']
-		self.artist = d['artist']
-		self.publisher = d['publisher']
-		self.genre = d['genre']
+		self.title = self._get_dict_value('title',d)
+		self.path = self._get_dict_value('path',d)
+		self.base_path = self._get_dict_value('base_path',d)
+		self.track_num = self._get_dict_value('track_num',d,0)
+		self.disc_num = self._get_dict_value('disc_num',d,0)
+		self.album = self._get_dict_value('album',d)
+		self.total_tracks = self._get_dict_value('total_tracks',d,0)
+		self.total_discs = self._get_dict_value('total_discs',d,0)
+		self.year = self._get_dict_value('year',d)
+		self.artist = self._get_dict_value('artist',d)
+		self.publisher = self._get_dict_value('publisher',d)
+		self.genre = self._get_dict_value('genre',d)
+	def _get_dict_value(self, key, d, default=''):
+		try:
+			if d[key]:
+				return d[key]
+		except KeyError:
+			pass
+		return default
 	def __str__(self):
 		song_line = '%s by %s' % (self.title, self.artist)
 		album_line = '\tFound on %s' % self.album
