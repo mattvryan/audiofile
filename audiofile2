@@ -1,0 +1,74 @@
+#!/usr/bin/env python
+# encoding: utf-8
+"""
+audiofile2.py
+
+The MIT License (MIT)
+
+Copyright (c) 2013 Matt Ryan
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+"""
+
+from sys import argv, exit, stdout
+from os import rename
+
+from aflib2 import AFLibrary, AFSqliteDataStore
+from threadpool import ThreadPool
+from afutils import get_clargs, find_files_with_ext, parse_query
+import afutils.file_pattern as pattern
+
+
+lib = AFLibrary(AFSqliteDataStore())
+
+
+def process_file(data):
+	lib.add_mp3(data[0], data[1])
+	
+def check_file_path(data):
+	newpath = pattern.get_new_path(data[0], data[1])
+	print 'Renaming "%s" as "%s"...' % (data[0].path, newpath)
+	rename(data[0].path, newpath)
+
+def main(args):
+	if args['path']:
+		tp = ThreadPool(process_file)
+		for f in find_files_with_ext(args['path'], 'mp3'):
+			tp.put([f, args['path']])
+		tp.quit()
+	elif args['query']:
+		qdict = {}
+		for key,val in parse_query(args['query'].strip()):
+			qdict[key] = val
+		for song in lib.get_songs(qdict):
+			print song
+	elif args['pattern']:
+		p = args['pattern']
+		if not pattern.is_valid(p):
+			print '\'%s\' is not a valid pattern.' % args['pattern']
+			exit(1)
+		tp = ThreadPool(check_file_path)
+		for song in lib.get_songs(None):
+			tp.put([song, p])
+		tp.quit()	
+
+
+if __name__ == '__main__':
+	main(get_clargs(argv[1:]))
+
