@@ -26,33 +26,24 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 """
 
-from sys import argv, exit, stdout
-from os import rename
+from sys import argv, exit
+
+import json
 
 from aflib3 import AFLibrary, AFMongoDataStore
-from threadpool import ThreadPool
 from afutils import get_clargs, find_files_with_ext, parse_query
 import afutils.file_pattern as pattern
-
+from afmq import AFMQ
 
 lib = AFLibrary(AFMongoDataStore())
-
-
-def process_file(data):
-	lib.add_mp3(data[0], data[1])
-	
-def check_file_path(data):
-	newpath = pattern.get_new_path(data[0], data[1])
-	print 'Renaming "%s" as "%s"...' % (data[0].path, newpath)
-	rename(data[0].path, newpath)
 
 def main(args):
 	if args['path']:
 		lib.initialize_db()
-		tp = ThreadPool(process_file)
+		afmq = AFMQ('/audiofile/library_additions')
 		for f in find_files_with_ext(args['path'], 'mp3'):
-			tp.put([f, args['path']])
-		tp.quit()
+			print 'Writing to queue: "%s"' % json.dumps([f, args['path']])
+			afmq.put(json.dumps([f, args['path']]))
 	elif args['query']:
 		qdict = {}
 		for key,val in parse_query(args['query'].strip()):
@@ -64,10 +55,9 @@ def main(args):
 		if not pattern.is_valid(p):
 			print '\'%s\' is not a valid pattern.' % args['pattern']
 			exit(1)
-		tp = ThreadPool(check_file_path)
+		afmq = AFMQ('/audiofile/file_renames')
 		for song in lib.get_songs(None):
-			tp.put([song, p])
-		tp.quit()	
+			afmq.put(json.dumps([song.__dict__, p]))
 
 
 if __name__ == '__main__':
