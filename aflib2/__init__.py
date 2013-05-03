@@ -62,6 +62,7 @@ class AFSqliteDataStore(AFDataStore):
 	the audiofile library in SQLite.
 	'''
 	def _get_connection(self):
+		self.dbname = expanduser('~/.audiofile/lib.db')
 		return sql.connect(self.dbname)
 	def _have_schema(self):
 		# Figure out if we have the schema yet
@@ -137,7 +138,7 @@ class AFSqliteDataStore(AFDataStore):
 			w = 'AND'
 		return sql
 
-	def _create_db(self):
+	def create_db(self):
 		self.dbname = expanduser('~/.audiofile/lib.db')
 		if not isdir(dirname(self.dbname)):
 			makedirs(dirname(self.dbname))
@@ -174,7 +175,7 @@ class AFSqliteDataStore(AFDataStore):
 		dbconn.close()
 	def get_query_result_set(self,qdict):
 		sqlstmt = self._make_sql_from_query(qdict)
-		dbconn = sql.connect(self.dbname)
+		dbconn = self._get_connection()
 		cur = dbconn.cursor()
 		cur.execute(sqlstmt)
 		rows = cur.fetchall()
@@ -260,6 +261,8 @@ class AFLibraryEntry:
 				if not self.disc_num:
 					self.disc_num = 1
 				self.publisher = mp3.tag.publisher
+				if not self.publisher:
+					self.publisher = '(Unknown)'
 				if mp3.tag.best_release_date:
 					self.year = str(mp3.tag.best_release_date)
 				if not self.year:

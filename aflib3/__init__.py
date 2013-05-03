@@ -289,6 +289,8 @@ class AFLibraryEntry:
 				if not self.disc_num:
 					self.disc_num = 1
 				self.publisher = mp3.tag.publisher
+				if not self.publisher:
+					self.publisher = '(Unknown)'
 				if mp3.tag.best_release_date:
 					self.year = str(mp3.tag.best_release_date)
 				if not self.year:
