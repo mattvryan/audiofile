@@ -13,5 +13,5 @@ The first is a standard single-user app format.  It uses a straightforward, sing
 
 The second format demonstrates a refactoring of the first format to make the code more modular in preparation for cloud scale.  When loading the libary, instead of adding each file as it is found, the application creates and manages a pool of threads.  When the app finds an MP3 file, it posts a job to the threadpool, which assigns a thread to open the MP3 file, read the ID3 v2 data, and store the data in the database.  This format also abstracts the data store from the library so other data stores can be added without affecting the library code directly.
 
-The third format uses a more cloud-based approach.  It uses a cloud-scale data store (CouchDB) and replaces the threadpool with code that posts messages to a message queue (RabbitMQ) and other parts of the code wait for and read messages from the queue.
+The third format uses a more cloud-based approach.  It uses a cloud-scale data store (MongoDB) and replaces the threadpool with code that posts messages to a message queue (ActiveMQ) and other parts of the code wait for and read messages from the queue.
 
